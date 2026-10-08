@@ -1128,7 +1128,8 @@ class Speech2Text:
 
         The model sees one training-length buffer at a time, with context on
         either side that is encoded and then dropped, so the frames kept from
-        each buffer were never at its edge.
+        each buffer were never at its edge. Context is rounded down to whole
+        encoder frames so the audio buffers and retained frames stay aligned.
 
         Long-form best-path decoding is an argmax over what this returns, and
         a forced alignment (espnet2.bin.align) is a Viterbi path through it:
@@ -1139,10 +1140,13 @@ class Speech2Text:
         task_id = self.converter.token2id[task_sym or self.task_sym]
 
         buffer_len_in_secs = self.preprocessor_conf["speech_length"]
-        chunk_len_in_secs = buffer_len_in_secs - 2 * context_len_in_secs
         buffer_len = int(self.sample_rate * buffer_len_in_secs)
-        chunk_len = int(self.sample_rate * chunk_len_in_secs)
-        context = int(self.sample_rate * context_len_in_secs)
+        buffer_frames = int(self.frames_per_sec * buffer_len_in_secs)
+        context_frames = int(self.frames_per_sec * context_len_in_secs)
+        chunk_frames = buffer_frames - 2 * context_frames
+        samples_per_frame = round(self.sample_rate / self.frames_per_sec)
+        chunk_len = chunk_frames * samples_per_frame
+        context = context_frames * samples_per_frame
 
         padded = np.pad(speech, (context, context))
         buffers = []
@@ -1154,9 +1158,6 @@ class Speech2Text:
             buffers.append(buffer)
 
         batched = torch.tensor(np.array(buffers)).to(getattr(torch, self.dtype))
-        buffer_frames = int(self.frames_per_sec * buffer_len_in_secs)
-        context_frames = int(self.frames_per_sec * context_len_in_secs)
-        chunk_frames = buffer_frames - 2 * context_frames
 
         kept = []
         for idx in range(0, batched.size(0), batch_size):

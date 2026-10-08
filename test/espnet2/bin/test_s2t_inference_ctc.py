@@ -176,7 +176,11 @@ def test_decode_long_returns_one_segment_for_a_ctc_only_checkpoint(s2t_config_fi
     assert isinstance(text, str)
 
 
-def test_ctc_log_probs_row_i_is_the_audio_at_frame_i(s2t_config_file, monkeypatch):
+@pytest.mark.parametrize("context", [0.5, 0.8, 1.0, 1.3])
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_ctc_log_probs_row_i_is_the_audio_at_frame_i(
+    s2t_config_file, monkeypatch, context, batch_size
+):
     """The language and task positions are not audio, so they are not frames.
 
     The encoder puts their embeddings in front of the frames. Counted as
@@ -185,7 +189,7 @@ def test_ctc_log_probs_row_i_is_the_audio_at_frame_i(s2t_config_file, monkeypatc
     `s2t_align.py` has always dropped them.
     """
     speech2text = Speech2TextBase(s2t_train_config=s2t_config_file)
-    # a 4 s window with 0.8 s of context is a whole number of frames throughout
+    # Include contexts that are not a whole number of encoder frames.
     monkeypatch.setitem(speech2text.preprocessor_conf, "speech_length", 4)
     hop = round(speech2text.sample_rate / speech2text.frames_per_sec)
 
@@ -202,7 +206,9 @@ def test_ctc_log_probs_row_i_is_the_audio_at_frame_i(s2t_config_file, monkeypatc
     # every sample says where it is; 0 is what the padding holds
     seconds = 10
     speech = np.arange(1, seconds * speech2text.sample_rate + 1, dtype=np.float32)
-    probs = speech2text.ctc_log_probs(speech, batch_size=2, context_len_in_secs=0.8)
+    probs = speech2text.ctc_log_probs(
+        speech, batch_size=batch_size, context_len_in_secs=context
+    )
 
     assert len(probs) == round(seconds * speech2text.frames_per_sec)
     assert probs[:, 0].tolist() == (1 + hop * np.arange(len(probs))).tolist()
